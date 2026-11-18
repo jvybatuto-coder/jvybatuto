@@ -1,0 +1,406 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Theme palette as RGB channels (Tailwind adds the alpha). Dark is the default. */
+  :root {
+    color-scheme: dark;
+    --ink-950: 5 5 5;
+    --ink-900: 10 10 10;
+    --ink-850: 14 14 14;
+    --ink-800: 18 18 18;
+    --ink-700: 26 26 26;
+    --ink-600: 36 36 36;
+    --ink-500: 46 46 46;
+    --crimson: 200 16 46;
+    --crimson-light: 224 36 63;
+    --crimson-dark: 139 0 0;
+    --mist-100: 244 244 245;
+    --mist-300: 201 201 206;
+    --mist-400: 154 154 162;
+    --mist-500: 110 110 118;
+    --mist-600: 75 75 82;
+    /* faint lines on surfaces (grid backdrops) */
+    --line: 255 255 255;
+  }
+  /* Light theme: ink becomes paper, mist becomes ink; crimson stays the accent */
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --ink-950: 246 246 247;
+    --ink-900: 255 255 255;
+    --ink-850: 250 250 250;
+    --ink-800: 241 241 243;
+    --ink-700: 228 228 231;
+    --ink-600: 212 212 216;
+    --ink-500: 186 186 193;
+    --crimson: 200 16 46;
+    --crimson-light: 176 12 40;
+    --crimson-dark: 139 0 0;
+    --mist-100: 17 17 19;
+    --mist-300: 52 52 58;
+    --mist-400: 82 82 90;
+    --mist-500: 108 108 116;
+    --mist-600: 140 140 148;
+    --line: 0 0 0;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 72px;
+  }
+  body {
+    @apply bg-ink-950 font-sans text-mist-300 antialiased;
+    overflow-x: hidden;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: rgba(200, 16, 46, 0.35);
+    color: #fff;
+  }
+  :focus-visible {
+    outline-color: #c8102e;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--ink-500)) rgb(var(--ink-950));
+  }
+}
+
+@layer components {
+  /* Standard dark surface used by cards */
+  .card-surface {
+    @apply relative rounded-lg border border-ink-700 bg-ink-900 transition-all duration-300;
+    background-image: linear-gradient(180deg, rgb(var(--line) / 0.018), transparent 40%);
+  }
+  .card-surface:hover {
+    @apply border-ink-500;
+    box-shadow: 0 20px 50px -30px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(200, 16, 46, 0.06);
+  }
+
+  /* Certificates: every card starts stacked on the grid's centre (--cx/--cy measured in
+     Certificates.tsx), tilted (--rot), smaller and faint, then spreads to its real grid cell.
+     .is-visible toggles with an IntersectionObserver; .is-settled turns the hover effects on. */
+  .cert-grid {
+    --cert-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --cert-k: 1;
+  }
+  .cert-grid::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: min(560px, 90%);
+    aspect-ratio: 1.6;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    background: radial-gradient(closest-side, rgba(255, 16, 37, 0.16), transparent);
+    transition: opacity 1.2s ease 0.2s;
+  }
+  .cert-grid.is-visible::before {
+    opacity: 0;
+  }
+  .cert-item {
+    transform: translate3d(calc(var(--cx, 0px) * var(--cert-k)), calc(var(--cy, 0px) * var(--cert-k)), 0)
+      rotate(var(--rot, 0deg)) scale(0.8);
+    opacity: 0.35;
+    transition:
+      transform 1.4s var(--cert-ease) calc(var(--i, 0) * 110ms),
+      opacity 1s ease calc(var(--i, 0) * 110ms);
+  }
+  .cert-grid:not(.is-visible) .cert-item {
+    pointer-events: none;
+  }
+  .cert-grid.is-visible .cert-item {
+    transform: none;
+    opacity: 1;
+  }
+  .cert-grid:not(.is-visible) .cert-step {
+    opacity: 0;
+  }
+  .cert-grid.is-visible .cert-step {
+    animation: cert-step-in 0.6s var(--cert-ease) calc(var(--i, 0) * 110ms + var(--at, 0ms)) both;
+  }
+  /* hover only once the spread has finished */
+  .cert-grid.is-settled .card-surface:hover,
+  .cert-grid.is-settled .card-surface:focus-visible {
+    border-color: rgba(255, 16, 37, 0.45);
+    box-shadow: 0 0 0 1px rgba(255, 16, 37, 0.12), 0 0 26px -6px rgba(255, 16, 37, 0.35);
+  }
+  .cert-grid:not(.is-settled) .card-surface img {
+    transform: none !important;
+  }
+  .cert-category {
+    transition: color 0.3s ease, text-shadow 0.3s ease;
+  }
+  .cert-grid.is-settled .card-surface:hover .cert-category {
+    color: #ff4d5e;
+    text-shadow: 0 0 10px rgba(255, 16, 37, 0.45);
+  }
+  /* single column: same idea, shorter travel */
+  @media (max-width: 639px) {
+    .cert-grid { --cert-k: 0.45; }
+  }
+
+  /* Projects: on scroll-in the cover slides in from the left and the info panel from the right,
+     meeting at their normal positions; the panel's content then staggers in (--step × 100ms).
+     .is-visible is toggled by ProjectCard's IntersectionObserver (replays on every visit). Stacked (mobile) = vertical slide. */
+  .project-reveal {
+    --pr-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --pr-shift: 0px;
+    --pr-rise: 28px;
+    transition: border-color 0.9s ease 0.35s, background-color 0.9s ease 0.35s, box-shadow 0.3s ease;
+  }
+  .project-reveal-media,
+  .project-reveal-info,
+  .project-reveal .pr-step {
+    opacity: 0;
+  }
+  .project-reveal-media {
+    transform: translate3d(calc(var(--pr-shift) * -1), var(--pr-rise), 0);
+    transition: opacity 1s ease, transform 1.1s var(--pr-ease);
+  }
+  .project-reveal-info {
+    transform: translate3d(var(--pr-shift), var(--pr-rise), 0);
+    transition: opacity 1s ease, transform 1.1s var(--pr-ease);
+  }
+  .project-reveal .pr-step {
+    transform: translate3d(0, 10px, 0);
+    transition:
+      opacity 0.6s ease calc(250ms + var(--step, 0) * 100ms),
+      transform 0.7s var(--pr-ease) calc(250ms + var(--step, 0) * 100ms),
+      color 0.3s ease,
+      border-color 0.3s ease;
+  }
+  .project-reveal:not(.is-visible) {
+    border-color: transparent;
+    background-color: transparent;
+    background-image: none;
+  }
+  .project-reveal.is-visible .project-reveal-media,
+  .project-reveal.is-visible .project-reveal-info,
+  .project-reveal.is-visible .pr-step {
+    opacity: 1;
+    transform: none;
+  }
+  /* brief red glow on the panel while it arrives */
+  .project-reveal.is-visible .project-reveal-info {
+    animation: project-panel-glow 1.4s ease-out both;
+  }
+  /* settled hover: red edge + soft glow, no size or position change */
+  .project-reveal.is-visible:hover {
+    border-color: rgba(255, 16, 37, 0.45);
+    box-shadow: 0 0 0 1px rgba(255, 16, 37, 0.12), 0 0 28px -6px rgba(255, 16, 37, 0.35);
+  }
+  @media (min-width: 768px) {
+    .project-reveal { --pr-shift: 80px; --pr-rise: 0px; }
+  }
+  @media (min-width: 1024px) {
+    .project-reveal { --pr-shift: 120px; }
+  }
+
+  /* Faint technical grid used behind the hero and covers */
+  .bg-grid {
+    background-image: linear-gradient(to right, rgb(var(--line) / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--line) / 0.035) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 100%);
+  }
+
+  /* Outlined display text */
+  /* Hero name marquee: a single copy of the name. padding-left: 100% (of the strip) parks it just past the
+     right edge; translating by -100% of its own width (strip + name) carries it fully out on the left,
+     then the loop restarts from the right. Only transform changes, so nothing around it moves. */
+  .hero-marquee {
+    overflow: hidden;
+    mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  }
+  .hero-marquee-name {
+    display: inline-block;
+    padding-left: 100%;
+    white-space: nowrap;
+    font-family: 'Space Grotesk', Inter, sans-serif;
+    font-size: clamp(2.4rem, 6vw, 5rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+    color: rgb(var(--mist-100));
+    animation: hero-marquee 30s linear infinite;
+    will-change: transform;
+  }
+  @media (max-width: 639px) {
+    .hero-marquee-name {
+      animation-duration: 18s; /* shorter trip on phones, same calm pace */
+    }
+  }
+  .hero-marquee-name--still {
+    padding-left: 0;
+    white-space: normal;
+    animation: none;
+  }
+
+  .text-outline {
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(var(--mist-100));
+  }
+
+  /* Crimson corner brackets on the profile frame */
+  .corner-frame::before,
+  .corner-frame::after {
+    content: '';
+    position: absolute;
+    z-index: 2;
+    width: 22px;
+    height: 22px;
+    border-color: #c8102e;
+    pointer-events: none;
+  }
+  .corner-frame::before {
+    top: 10px;
+    left: 10px;
+    border-top: 2px solid;
+    border-left: 2px solid;
+  }
+  .corner-frame::after {
+    right: 10px;
+    bottom: 10px;
+    border-right: 2px solid;
+    border-bottom: 2px solid;
+  }
+}
+
+@keyframes project-panel-glow {
+  0% { box-shadow: 0 0 0 0 rgba(255, 16, 37, 0); }
+  35% { box-shadow: 0 0 34px -4px rgba(255, 16, 37, 0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 16, 37, 0); }
+}
+@keyframes hero-marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-100%, 0, 0); }
+}
+@keyframes cert-step-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+/* ── Skills section: large logos directly on the page (see sections/Skills.tsx) ──
+   Kept outside @layer so Tailwind never purges the per-logo classes (built dynamically). */
+/* Each logo keeps its proportions; --logo-w is its desktop width, --tech-scale shrinks it on smaller screens */
+.tech-item {
+  --tech-scale: 0.85;
+}
+.tech-logo-box {
+  height: calc(112px * var(--tech-scale));
+}
+.tech-logo {
+  width: calc(var(--logo-w) * var(--tech-scale) * 1px);
+  max-width: 100%;
+  transition: transform 0.3s ease, filter 0.3s ease;
+}
+.tech-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.tech-name {
+  transition: color 0.3s ease;
+}
+.tech-item:hover .tech-logo {
+  transform: translateY(-6px) scale(1.06);
+  filter: brightness(1.08) drop-shadow(0 10px 22px rgb(var(--crimson) / 0.45));
+}
+.tech-item:hover .tech-name {
+  color: rgb(var(--crimson-light));
+}
+/* Django's dark-green wordmark gets a thin outline so it reads on the dark background */
+.tech-logo--django path {
+  stroke: rgb(var(--mist-100));
+  stroke-width: 2.2px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+:root[data-theme='light'] .tech-logo--django path {
+  stroke: none;
+}
+@media (min-width: 768px) {
+  .tech-item { --tech-scale: 0.95; }
+}
+@media (min-width: 1280px) {
+  .tech-item { --tech-scale: 0.95; }
+}
+@media (min-width: 1440px) {
+  .tech-item { --tech-scale: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .hero-marquee-name {
+    padding-left: 0;
+    white-space: normal;
+    animation: none;
+  }
+  /* Certificates: no stack or spread, cards simply appear in place */
+  .cert-item {
+    transform: none !important;
+    transition-delay: 0s !important;
+  }
+  .cert-grid .cert-step {
+    animation-delay: 0s !important;
+  }
+  /* Projects: no slide or stagger wait, content simply appears */
+  .project-reveal .pr-step {
+    transition-delay: 0s !important;
+  }
+}
+
+/* ── Light theme tweaks for things drawn with fixed colours ───────── */
+:root[data-theme='light'] .card-surface:hover {
+  box-shadow: 0 20px 45px -28px rgba(17, 17, 19, 0.25), 0 0 0 1px rgba(200, 16, 46, 0.08);
+}
+
+/* Smooth colour change when the theme is toggled (class is added only for the switch) */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.35s ease, fill 0.35s ease !important;
+}
+/* Brand icons that are inverted to show on dark (Django, GitHub) are already dark, so show them as-is */
+:root[data-theme='light'] .invert {
+  --tw-invert: invert(0);
+}
+
+/* ── Resume printing (see components/resume) ─────────────────────────
+   While the resume modal is open, a print-only copy (.resume-print-root) is mounted in <body>.
+   Printing then shows only that copy as a clean white A4 page. Normal printing is unaffected. */
+.resume-print-root {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  :root:has(body > .resume-print-root),
+  body:has(> .resume-print-root) {
+    color-scheme: light; /* otherwise the dark theme tints the page margins */
+    background: #fff !important;
+  }
+  body:has(> .resume-print-root) > :not(.resume-print-root) {
+    display: none !important;
+  }
+  .resume-print-root {
+    display: block;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
